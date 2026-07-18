@@ -14,10 +14,11 @@ type ConversationPageProps = {
 const page = async({params}:ConversationPageProps) => {
     const {id} = await params;
 
+    let conversation: Awaited<ReturnType<typeof getConversation>>;
     try {
-      await getConversation(id)
+      conversation = await getConversation(id);
     } catch (error) {
-      notFound()
+      notFound();
     }
 
     const initialMessages = await loadChatMessages(id);
@@ -28,6 +29,7 @@ const page = async({params}:ConversationPageProps) => {
       key={id}
       conversationId={id}
       initialMessages={initialMessages}
+      initialModel={conversation!.model}
     />
   )
 }

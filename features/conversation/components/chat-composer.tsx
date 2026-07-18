@@ -1,97 +1,110 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpIcon } from "lucide-react";
+import { GlobeIcon } from "lucide-react";
+import type { ChatStatus } from "ai";
 
 import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea,
-} from "@/components/ui/input-group";
-import { Spinner } from "@/components/ui/spinner";
+  PromptInput,
+  PromptInputBody,
+  PromptInputButton,
+  PromptInputFooter,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+  // Attachments disabled for now — bring back when file/image upload is needed:
+  // PromptInputActionMenu,
+  // PromptInputActionMenuTrigger,
+  // PromptInputActionMenuContent,
+  // PromptInputActionAddAttachments,
+} from "@/components/ai-elements/prompt-input";
+import { MODEL_OPTIONS } from "@/features/ai/utils/model";
 import { cn } from "@/lib/utils";
 
 type ChatComposerProps = {
-  onSend: (content: string) => Promise<void> | void;
-  isSending?: boolean;
-  placeholder?: string;
+  onSend: (params: { text: string; model: string; webSearch: boolean }) => Promise<void> | void;
+  status: ChatStatus;
+  model: string;
+  onModelChange: (model: string) => void;
+  webSearch: boolean;
+  onWebSearchChange: (value: boolean) => void;
   className?: string;
-  autoFocus?: boolean;
 };
 
 /**
- * Message input form with send button. Enter sends; Shift+Enter inserts a newline.
+ * Message composer — text input, model picker, and web-search toggle,
+ * built on the Vercel AI Elements `PromptInput` primitives.
  */
 export function ChatComposer({
   onSend,
-  isSending = false,
-  placeholder = "Message ChatMate…",
+  status,
+  model,
+  onModelChange,
+  webSearch,
+  onWebSearchChange,
   className,
-  autoFocus = false,
 }: ChatComposerProps) {
-  const [value, setValue] = React.useState("");
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const isSending = status === "submitted" || status === "streaming";
 
-  React.useEffect(() => {
-    if (autoFocus) {
-      textareaRef.current?.focus();
-    }
-  }, [autoFocus]);
-
-  /** Submits the current message when the form is submitted or Enter is pressed. */
-  async function handleSubmit(event?: React.FormEvent) {
-    event?.preventDefault();
-    const content = value.trim();
-    if (!content || isSending) return;
-
-    setValue("");
-    await onSend(content);
-    textareaRef.current?.focus();
+  async function handleSubmit(message: { text: string }) {
+    const text = message.text.trim();
+    if (!text || isSending) return;
+    await onSend({ text, model, webSearch });
   }
-
-  /** Handles keyboard shortcuts — Enter to send, Shift+Enter for a new line. */
-  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void handleSubmit();
-    }
-  }
-
-  const canSend = value.trim().length > 0 && !isSending;
 
   return (
-    <form
-      onSubmit={(event) => void handleSubmit(event)}
-      className={cn("mx-auto w-full max-w-3xl px-4 pb-4 md:px-6", className)}
-    >
-      <InputGroup className="h-auto min-h-14 rounded-3xl border-border/80 bg-background shadow-sm dark:bg-input/40">
-        <InputGroupTextarea
-          ref={textareaRef}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={isSending}
-          rows={1}
-          className="max-h-48 min-h-12 py-3.5 pl-4 text-[15px] leading-relaxed"
-        />
-        <InputGroupAddon align="inline-end" className="pr-2 pb-2 self-end">
-          <InputGroupButton
-            type="submit"
-            size="icon-sm"
-            variant="default"
-            disabled={!canSend}
-            className="size-9 rounded-full"
-            aria-label="Send message"
-          >
-            {isSending ? <Spinner /> : <ArrowUpIcon />}
-          </InputGroupButton>
-        </InputGroupAddon>
-      </InputGroup>
+    <div className={cn("mx-auto w-full max-w-3xl px-4 pb-4 md:px-6", className)}>
+      <PromptInput onSubmit={handleSubmit}>
+        <PromptInputBody>
+          <PromptInputTextarea placeholder="Message ChatMate" />
+        </PromptInputBody>
+
+        <PromptInputFooter>
+          <PromptInputTools>
+            {/* Attachments disabled for now:
+            <PromptInputActionMenu>
+              <PromptInputActionMenuTrigger />
+              <PromptInputActionMenuContent>
+                <PromptInputActionAddAttachments />
+              </PromptInputActionMenuContent>
+            </PromptInputActionMenu>
+            */}
+
+            <PromptInputButton
+              variant={webSearch ? "default" : "ghost"}
+              onClick={() => onWebSearchChange(!webSearch)}
+              tooltip="Search the web"
+            >
+              <GlobeIcon className="size-4" />
+              <span>Search</span>
+            </PromptInputButton>
+
+            <PromptInputSelect value={model} onValueChange={(v) => onModelChange(v as string)}>
+              <PromptInputSelectTrigger>
+                <PromptInputSelectValue placeholder="Model" />
+              </PromptInputSelectTrigger>
+              <PromptInputSelectContent>
+                {MODEL_OPTIONS.map((option) => (
+                  <PromptInputSelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </PromptInputSelectItem>
+                ))}
+              </PromptInputSelectContent>
+            </PromptInputSelect>
+          </PromptInputTools>
+
+          <PromptInputSubmit status={status} />
+        </PromptInputFooter>
+      </PromptInput>
+
       <p className="mt-2 text-center text-xs text-muted-foreground">
         ChatMate can make mistakes. Check important info.
       </p>
-    </form>
+    </div>
   );
 }
