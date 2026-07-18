@@ -1,8 +1,7 @@
 "use server";
 
-import { currentUser } from "@clerk/nextjs/server";
+import { auth,currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
-import type { User } from "@/lib/generated/prisma/client";
 
 /**
  * Syncs the signed-in Clerk user into the local Prisma `User` table (upsert).
@@ -11,28 +10,23 @@ import type { User } from "@/lib/generated/prisma/client";
  * @throws {Error} When no Clerk session is present.
  */
 export async function onBoard() {
-    const clerkUser = await currentUser();
+    const { userId } = await auth();
+    if (!userId) throw new Error("Unauthorized");
 
-    if (!clerkUser) {
-        throw new Error("Unauthorized")
-    }
+    const existing = await prisma.user.findUnique({ where: { clerkId: userId } });
+    if (existing) return existing; // fast path — one cheap indexed lookup, no Clerk API call
+
+    const clerkUser = await currentUser();
+    if (!clerkUser) throw new Error("Unauthorized");
 
     const email = clerkUser.emailAddresses[0]?.emailAddress ?? null;
 
-    return prisma.user.upsert({
-        where: { clerkId: clerkUser.id },
-        create: {
+    return prisma.user.create({
+        data: {
             clerkId: clerkUser.id,
             email,
             firstName: clerkUser.firstName,
             lastName: clerkUser.lastName,
-            imageUrl: clerkUser.imageUrl
+            imageUrl: clerkUser.imageUrl,
         },
-        update: {
-            email,
-            firstName: clerkUser.firstName,
-            lastName: clerkUser.lastName,
-            imageUrl: clerkUser.imageUrl
-        }
-    })
-}
+    })};

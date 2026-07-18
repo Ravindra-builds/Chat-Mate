@@ -42,6 +42,7 @@ import {
   useUpdateConversation,
 } from "@/features/conversation/hooks/use-conversation";
 import { cn } from "@/lib/utils";
+import { Moon, Sun } from "lucide-react"
 
 type Conversation = NonNullable<
   ReturnType<typeof useConversations>["data"]
@@ -75,7 +76,7 @@ export function AppSidebar() {
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">
                 C
               </span>
-              <span>ChaiGPT</span>
+              <span>ChatMate</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
@@ -231,15 +232,12 @@ function SidebarFooterMenu() {
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start"
-          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-        >
-          Toggle theme
-        </Button>
+        <Button variant="outline" size="icon"
+        onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>
+                  <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+                  <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+                  <span className="sr-only">Toggle theme</span>
+                </Button>
       </SidebarMenuItem>
       <SidebarMenuItem>
         <div className="flex items-center gap-2 px-1 py-1.5">
