@@ -77,15 +77,23 @@ export async function POST(req: Request) {
     await saveChatMessages(id, [message]);
   }
 
+   const convoSystemPrompt ="You are ChatMate , a helpful assistant You have a web_search tool — use it whenever the question needs current information (news, prices, recent events, anything that may have changed since your training) or you're not confident in your knowledge. Don't guess when you can check. Format responses in markdown: use headers for structure in longer answers, bullet or numbered lists for steps/options, tables for comparisons, fenced code blocks with a language tag for any code, and LaTeX ($...$ or $$...$$) for math. Use mermaid diagrams (```mermaid) when explaining flows, architectures, or relationships that are easier to see than read."
   const result = streamText({
     model: getChatModel(modelId),
     system:
-      conversation.systemPrompt ??
-      "You are ChatMate , a helpful assistant You have a web_search tool — use it whenever the question needs current information (news, prices, recent events, anything that may have changed since your training) or you're not confident in your knowledge. Don't guess when you can check.",
+      conversation.systemPrompt ?? convoSystemPrompt,
     messages: await convertToModelMessages(messages),
-    tools: { web_search: webSearchTool },
-    toolChoice: webSearch ? { type: "tool", toolName: "web_search" } : "auto",
+    tools: {search_web: webSearchTool, },
     stopWhen: stepCountIs(5),
+    prepareStep: ({ stepNumber }) => {
+       // Only force a search on the very first step when the toggle is on.
+       // Every step after that is left to "auto" so the model can stop
+       // and write its final answer instead of being forced to search again.
+       if (webSearch && stepNumber === 0) {
+         return { toolChoice: { type: "tool", toolName: "search_web" } };
+       }
+       return { toolChoice: "auto" };
+     },
   });
 
   result.consumeStream();
