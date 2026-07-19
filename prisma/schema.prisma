@@ -31,6 +31,7 @@ model Conversation {
   systemPrompt  String?  @db.Text
   isPinned      Boolean  @default(false)
   isArchived    Boolean  @default(false)
+   isDeleted     Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   lastMessageAt DateTime @default(now())
@@ -40,10 +41,17 @@ model Conversation {
   activeRootId String?  @unique
   activeRoot   Message? @relation("ConversationActiveRoot", fields: [activeRootId], references: [id], onDelete: SetNull)
 
+  forkedFromConversationId String?
+  forkedFromConversation   Conversation?  @relation("ConversationForks", fields: [forkedFromConversationId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  forkedConversations      Conversation[] @relation("ConversationForks")
+  forkedFromMessageId      String?
+  forkedFromMessage        Message? @relation("ConversationForkAnchor", fields: [forkedFromMessageId], references: [id], onDelete: SetNull)
+
   messages Message[]
 
   @@index([userId, lastMessageAt(sort: Desc)])
   @@index([userId, isPinned, lastMessageAt(sort: Desc)])
+  @@index([forkedFromConversationId]) 
 }
 
 enum MessageRole {
@@ -77,6 +85,8 @@ model Message {
   activeParent Message?  @relation("ActiveChild")
   activeForConversation Conversation? @relation("ConversationActiveRoot")
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+   forkedConversations Conversation[] @relation("ConversationForkAnchor")
 
    createdAt DateTime @default(now())
    updatedAt DateTime @updatedAt

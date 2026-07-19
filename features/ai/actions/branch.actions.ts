@@ -5,7 +5,11 @@ import type { UIMessage } from "ai";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { requireUser } from "@/features/auth/action/require-user";
 import { prisma } from "@/lib/db";
-import { loadChatMessages, type LoadChatMessagesResult } from "./chat-store";
+import {
+  hasForksInSubtree,
+  loadChatMessages,
+  type LoadChatMessagesResult,
+} from "./chat-store";
 import { toUIMessageParts } from "@/features/ai/utils/message-parts";
 
 export type EditMode = "inline" | "branch";
@@ -43,6 +47,12 @@ async function loadOwnedMessage(messageId: string) {
  * metadata for every message on it. Used to hand the client a trimmed path
  * after an edit/regenerate that hasn't produced a new assistant reply yet —
  * ready for `setMessages()` followed by `regenerate()` against `/api/chat`.
+ *
+ * `context` is intentionally returned empty here (not omitted, since
+ * `LoadChatMessagesResult` requires it) — every caller of this helper only
+ * reads `.messages`/`.branches`, and inherited fork context never changes
+ * mid-conversation, so the client keeps using whatever it already loaded on
+ * the initial page render instead of refetching it here.
  */
 async function loadAncestorPath(
   conversationId: string,
@@ -98,7 +108,7 @@ async function loadAncestorPath(
     parts: toUIMessageParts(row.parts, row.content),
   }));
 
-  return { messages, branches };
+  return { messages, branches, context: [] };
 }
 
 /**
@@ -111,6 +121,9 @@ async function loadAncestorPath(
  *   fresh one replaces it. No sibling branch is created. Only meaningful
  *   when called on the current leaf of the active path — calling it on an
  *   earlier message will delete everything downstream of that reply.
+ *   Refuses to run if another conversation was forked from anything in that
+ *   discarded subtree (see `hasForksInSubtree`) — deleting it would take
+ *   that fork's history down with it.
  *
  * Either way, returns the root→message ancestor path so the client can
  * `setMessages()` and trigger `regenerate()`.
@@ -162,6 +175,11 @@ export async function editMessage(
   // subtree) that followed it — deleting it cascades and clears the
   // parent's activeChildId automatically (FK onDelete: SetNull).
   if (message.activeChildId) {
+    if (await hasForksInSubtree(message.activeChildId)) {
+      throw new Error(
+        "Can't discard this reply — another conversation was branched from it. Use branch mode instead."
+      );
+    }
     await prisma.message.delete({ where: { id: message.activeChildId } });
   }
 
@@ -183,7 +201,9 @@ export async function editMessage(
  *   new sibling and repoints `activeChildId` once the reply streams in.
  * - `"inline"` — deletes the existing assistant message (and its subtree)
  *   outright, so exactly one reply exists once regeneration completes — no
- *   branch arrows, at the cost of a new underlying row id.
+ *   branch arrows, at the cost of a new underlying row id. Refuses to run
+ *   if another conversation was forked from anything in that subtree, for
+ *   the same reason as `editMessage`'s inline mode.
  */
 export async function regenerateMessage(
   messageId: string,
@@ -198,6 +218,11 @@ export async function regenerateMessage(
   }
 
   if (mode === "inline") {
+    if (await hasForksInSubtree(messageId)) {
+      throw new Error(
+        "Can't discard this reply — another conversation was branched from it. Use branch mode instead."
+      );
+    }
     await prisma.message.delete({ where: { id: messageId } });
   }
   // "branch": no mutation needed here — saveChatMessages will create a

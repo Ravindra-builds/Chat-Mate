@@ -31,6 +31,13 @@ import {
  * `regenerate()` on the client). `parentId` for any newly-created message is
  * inferred server-side from its predecessor in that path — see
  * `saveChatMessages`.
+ *
+ * Forking note: if this conversation was forked off another one, its own
+ * saved path (`ownMessages`) never includes the inherited ancestor
+ * messages — those live under a different conversationId and are re-fetched
+ * as `context` on every request instead. `context` is merged in only for
+ * the model call, not for `originalMessages`/persistence, so we never
+ * re-write rows that belong to the source conversation.
  */
 export async function POST(req: Request) {
   await auth.protect();
@@ -71,29 +78,33 @@ export async function POST(req: Request) {
     });
   }
 
-  const { messages: previousMessages } = await loadChatMessages(id);
+  const { messages: previousMessages, context } = await loadChatMessages(id);
 
   const alreadySaved = previousMessages.some(
     (storedMessage) => storedMessage.id === message.id,
   );
 
-  const messages = alreadySaved
+  const ownMessages = alreadySaved
     ? previousMessages
     : [...previousMessages, message];
 
   if (!alreadySaved) {
-    // Save the whole path (not just `[message]`) so the new message's
+    // Save the whole *own* path (not just `[message]`) so the new message's
     // parentId can be inferred from its predecessor. Existing messages in
-    // `messages` are no-op content updates.
-    await saveChatMessages(id, messages);
+    // `ownMessages` are no-op content updates. `context` (inherited from a
+    // fork source, if any) is deliberately excluded — it's not this
+    // conversation's data to rewrite.
+    await saveChatMessages(id, ownMessages);
   }
 
-   const convoSystemPrompt ="You are ChatMate , a helpful assistant You have a web_search tool — use it whenever the question needs current information (news, prices, recent events, anything that may have changed since your training) or you're not confident in your knowledge. Don't guess when you can check. Format responses in markdown: use headers for structure in longer answers, bullet or numbered lists for steps/options, tables for comparisons, fenced code blocks with a language tag for any code, and LaTeX ($...$ or $$...$$) for math. Use mermaid diagrams (```mermaid) when explaining flows, architectures, or relationships that are easier to see than read."
+   const convoSystemPrompt ="You are ChatMate , a helpful assistant You have a web_search tool — use it whenever the question needs current information (news, prices, recent events, anything that may have changed since your training) or you're not confident in your knowledge. Don't guess when you can check. Format responses in markdown: use headers for structure in longer answers, bullet or numbered lists for steps/options, tables for comparisons, fenced code blocks with a language tag for any code, and LaTeX ($...$ or $$...$$) for math. Use mermaid diagrams (```mermaid) when explaining flows, architectures, or relationships that are easier to see than read.";
   const result = streamText({
     model: getChatModel(modelId),
     system:
       conversation.systemPrompt ?? convoSystemPrompt,
-    messages: await convertToModelMessages(messages),
+    // Inherited fork context goes in here so the model keeps continuity —
+    // but only here, never into `originalMessages` below.
+    messages: await convertToModelMessages([...context, ...ownMessages]),
     tools: {search_web: webSearchTool, },
     stopWhen: stepCountIs(5),
     prepareStep: ({ stepNumber }) => {
@@ -112,7 +123,7 @@ export async function POST(req: Request) {
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
       stream: result.stream,
-      originalMessages: messages,
+      originalMessages: ownMessages,
       generateMessageId: createIdGenerator({ prefix: "msg", size: 16 }),
       onEnd: async ({ messages: finalMessages }) => {
         try {

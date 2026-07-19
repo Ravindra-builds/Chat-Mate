@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useChat } from "@ai-sdk/react"
 import React, { useMemo, useState } from 'react'
-import { useConversations } from '../hooks/use-conversation';
+import { useConversations, useForkConversation } from '../hooks/use-conversation';
 import { useBranches } from '../hooks/use-branches';
 import { editMessage, regenerateMessage, setActiveChild } from '@/features/ai/actions/branch.actions';
 import { queryKeys } from '../utils/query-keys';
@@ -18,16 +18,27 @@ import { DEFAULT_CHAT_MODEL } from '@/features/ai/utils/model';
 type ConversationViewProps = {
     conversationId: string;
     initialMessages: UIMessage[];
-     initialModel?: string | null;
+    /** Read-only ancestor messages inherited from a forked-from conversation, if any. */
+    initialContext?: UIMessage[];
+    initialModel?: string | null;
+    /** Set when this conversation was created via "Make new branch". */
+    sourceConversationId?: string | null;
 };
 
 /**
  * Main chat view — header, message list (or empty state), and composer with streaming.
  */
-export const ConversationView = ({ conversationId, initialMessages, initialModel }: ConversationViewProps) => {
+export const ConversationView = ({
+    conversationId,
+    initialMessages,
+    initialContext,
+    initialModel,
+    sourceConversationId,
+}: ConversationViewProps) => {
     const queryClient = useQueryClient();
     const { data: conversations } = useConversations();
     const { data: branches } = useBranches(conversationId);
+    const forkConversation = useForkConversation();
     const [model, setModel] = useState(initialModel || DEFAULT_CHAT_MODEL);
     const [webSearch, setWebSearch] = useState(false);
     // Guards every mutation that touches the message tree — switching a
@@ -150,16 +161,20 @@ export const ConversationView = ({ conversationId, initialMessages, initialModel
                 <h1 className="truncate text-sm font-medium">{title}</h1>
             </header>
 
-            {messages.length === 0 ? (
+            {messages.length === 0 && (!initialContext || initialContext.length === 0) ? (
                 <ChatEmpty />
             ) : (
                 <ChatMessages
                     messages={messages}
                     status={status}
                     branches={branches}
+                    context={initialContext}
+                    sourceConversationId={sourceConversationId}
                     onSwitchBranch={handleSwitchBranch}
                     onEditMessage={handleEditMessage}
                     onRegenerateMessage={handleRegenerateMessage}
+                    onForkConversation={(messageId) => forkConversation.mutate(messageId)}
+                    isForking={forkConversation.isPending}
                     isBranchBusy={isBranchBusy || isStreaming}
                 />
             )}

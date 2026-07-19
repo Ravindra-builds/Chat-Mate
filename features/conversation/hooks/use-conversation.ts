@@ -10,6 +10,7 @@ import {
     listConversations,
     updateConversation,
 } from "../actions/conversation.actions";
+import { forkConversation } from "@/features/ai/actions/conversation.action";
 import { queryKeys } from "../utils/query-keys";
 
 
@@ -40,6 +41,29 @@ export function useCreateConversation() {
         },
         onError: (error: Error) => {
             toast.error(error.message || "Could not create chat");
+        },
+    });
+}
+
+/**
+ * Mutation hook that forks a new, independent conversation off of a given
+ * message and navigates to it.
+ */
+export function useForkConversation() {
+    const queryClient = useQueryClient();
+    const router = useRouter();
+
+    return useMutation({
+        mutationFn: (messageId: string) => forkConversation(messageId),
+        onSuccess: ({ id }) => {
+            void queryClient.invalidateQueries({
+                queryKey: queryKeys.conversations.all,
+            });
+            router.push(`/c/${id}`);
+            toast.success("Started a new branch conversation");
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || "Could not start a new branch");
         },
     });
 }
@@ -79,19 +103,26 @@ export function useDeleteConversation(activeId?: string) {
 
     return useMutation({
         mutationFn: (id: string) => deleteConversation(id),
-        onSuccess: ({ id }) => {
+        onSuccess: ({ id, hidden }) => {
             void queryClient.invalidateQueries({
                 queryKey: queryKeys.conversations.all,
             });
-            queryClient.removeQueries({
-                queryKey: queryKeys.messages.byConversation(id),
-            });
+
+            if (!hidden) {
+                queryClient.removeQueries({
+                    queryKey: queryKeys.messages.byConversation(id),
+                });
+            }
 
             if (activeId === id) {
                 router.push("/");
             }
 
-            toast.success("Chat deleted");
+            toast.success(
+                hidden
+                    ? "This chat has branches, so it was hidden instead of deleted"
+                    : "Chat deleted"
+            );
         },
         onError: (error: Error) => {
             toast.error(error.message || "Could not delete chat");

@@ -6,10 +6,13 @@ import {
   ChevronDownIcon,
   CopyIcon,
   ExternalLinkIcon,
+  GitBranchIcon,
   GlobeIcon,
+  MoreHorizontalIcon,
   PencilIcon,
   RefreshCcwIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -25,6 +28,12 @@ import {
   MessageResponse,
 } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader } from "@/components/ai-elements/loader";
 import { cn } from "@/lib/utils";
@@ -111,11 +120,37 @@ function WebSearchPartView({ part }: { part: WebSearchPart }) {
   );
 }
 
+/** Renders a message's text/web-search parts. Shared by interactive and read-only context messages. */
+function MessagePartsView({ message }: { message: UIMessage }) {
+  return (
+    <>
+      {message.parts.map((part, i) => {
+        if (isTextUIPart(part)) {
+          return <MessageResponse key={i}>{part.text}</MessageResponse>;
+        }
+        if (isWebSearchPartType(part)) {
+          const searchPart = part as unknown as WebSearchPart;
+          return <WebSearchPartView key={searchPart.toolCallId ?? i} part={searchPart} />;
+        }
+        return null;
+      })}
+    </>
+  );
+}
+
 type ChatMessagesProps = {
   messages: UIMessage[];
   status: ChatStatus;
   /** Sibling/branch metadata keyed by message id, from loadChatMessages(). */
   branches?: Record<string, BranchInfo>;
+  /**
+   * Read-only ancestor messages inherited from a forked-from conversation
+   * (root → fork point). Rendered above `messages` with no action bar —
+   * they belong to a different conversation's tree.
+   */
+  context?: UIMessage[];
+  /** The conversation this one was forked from, if any — used for the "view original" link. */
+  sourceConversationId?: string | null;
   /** Called when the user picks a different sibling at a fork. */
   onSwitchBranch?: (parentId: string | null, childId: string) => void;
   /**
@@ -129,6 +164,10 @@ type ChatMessagesProps = {
    * Resolves to `false` on failure.
    */
   onRegenerateMessage?: (messageId: string) => Promise<boolean>;
+  /** Called when the user forks a message off into a brand-new conversation. */
+  onForkConversation?: (messageId: string) => void;
+  /** True while a fork is being created (disables the menu item, doesn't block anything else). */
+  isForking?: boolean;
   /** True while any branch mutation (switch/edit/regenerate) is in flight. */
   isBranchBusy?: boolean;
 };
@@ -137,9 +176,13 @@ export function ChatMessages({
   messages,
   status,
   branches,
+  context,
+  sourceConversationId,
   onSwitchBranch,
   onEditMessage,
   onRegenerateMessage,
+  onForkConversation,
+  isForking,
   isBranchBusy,
 }: ChatMessagesProps) {
   const isWaiting = status === "submitted" && messages.at(-1)?.role === "user";
@@ -179,6 +222,40 @@ export function ChatMessages({
   return (
     <Conversation>
       <ConversationContent className="py-8">
+        {context && context.length > 0 ? (
+          <>
+            <div className="mx-auto flex w-full max-w-[95%] items-center gap-3 py-2 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              <span className="shrink-0">
+                Branched from{" "}
+                {sourceConversationId ? (
+                  <Link
+                    href={`/c/${sourceConversationId}`}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    an earlier conversation
+                  </Link>
+                ) : (
+                  "an earlier conversation"
+                )}
+              </span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            {context.map((message) => (
+              <Message key={message.id} from={message.role} className="opacity-60">
+                <MessageContent>
+                  <MessagePartsView message={message} />
+                </MessageContent>
+              </Message>
+            ))}
+
+            <div className="mx-auto flex w-full max-w-[95%] items-center py-2">
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          </>
+        ) : null}
+
         {messages.map((message) => {
           const branch = branches?.[message.id];
           const isUser = message.role === "user";
@@ -229,16 +306,7 @@ export function ChatMessages({
                 </div>
               ) : (
                 <MessageContent>
-                  {message.parts.map((part, i) => {
-                    if (isTextUIPart(part)) {
-                      return <MessageResponse key={i}>{part.text}</MessageResponse>;
-                    }
-                    if (isWebSearchPartType(part)) {
-                      const searchPart = part as unknown as WebSearchPart;
-                      return <WebSearchPartView key={searchPart.toolCallId ?? i} part={searchPart} />;
-                    }
-                    return null;
-                  })}
+                  <MessagePartsView message={message} />
                 </MessageContent>
               )}
 
@@ -255,7 +323,13 @@ export function ChatMessages({
                     />
                   ) : null}
 
-                  <MessageActions className="opacity-0 transition-opacity group-hover:opacity-100">
+                  {/*
+                    Hover-revealed on desktop (mouse can discover it by
+                    hovering), but always visible below the `md` breakpoint —
+                    touch devices have no hover state, so gating discovery
+                    behind it would hide these entirely on phones.
+                  */}
+                  <MessageActions className="transition-opacity opacity-100">
                     <MessageAction
                       tooltip="Copy"
                       onClick={() => void copyMessage(message)}
@@ -272,17 +346,44 @@ export function ChatMessages({
                         <PencilIcon />
                       </MessageAction>
                     ) : null}
-
-                    {!isUser && onRegenerateMessage ? (
-                      <MessageAction
-                        tooltip="Regenerate"
-                        disabled={isBranchBusy}
-                        onClick={() => void onRegenerateMessage(message.id)}
-                      >
-                        <RefreshCcwIcon />
-                      </MessageAction>
-                    ) : null}
                   </MessageActions>
+
+                  {/*
+                    The "more" menu is always visible — never hover-gated —
+                    both so it works on touch and so its contents
+                    (regenerate / fork) are discoverable without hovering,
+                    same as ChatGPT's kebab menu.
+                  */}
+                  {onRegenerateMessage || onForkConversation ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={<Button type="button" size="icon-sm" variant="ghost" />}
+                      >
+                        <MoreHorizontalIcon className="size-3.5" />
+                        <span className="sr-only">More actions</span>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align={isUser ? "end" : "start"}>
+                        {!isUser && onRegenerateMessage ? (
+                          <DropdownMenuItem
+                            disabled={isBranchBusy}
+                            onClick={() => void onRegenerateMessage(message.id)}
+                          >
+                            <RefreshCcwIcon />
+                            Regenerate
+                          </DropdownMenuItem>
+                        ) : null}
+                        {onForkConversation ? (
+                          <DropdownMenuItem
+                            disabled={isForking}
+                            onClick={() => onForkConversation(message.id)}
+                          >
+                            <GitBranchIcon />
+                            Make new branch
+                          </DropdownMenuItem>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
                 </div>
               ) : null}
             </Message>

@@ -21,16 +21,19 @@ const page = async({params}:ConversationPageProps) => {
       notFound();
     }
 
-    // `branches` (sibling metadata per message id) isn't consumed yet — it
-    // gets wired into ConversationView / MessageBranch in Step 4.
-    const { messages: initialMessages } = await loadChatMessages(id);
+    const {
+      messages: initialMessages,
+      context: initialContext,
+    } = await loadChatMessages(id);
 
   return (
     <ConversationView
       key={id}
       conversationId={id}
       initialMessages={initialMessages}
+      initialContext={initialContext}
       initialModel={conversation!.model}
+      sourceConversationId={conversation!.forkedFromConversationId}
     />
   )
 }

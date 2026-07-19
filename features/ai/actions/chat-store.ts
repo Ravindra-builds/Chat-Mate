@@ -17,6 +17,16 @@ export type LoadChatMessagesResult = {
   messages: UIMessage[];
   /** Keyed by message id — only populated for messages on the active path. */
   branches: Record<string, BranchInfo>;
+  /**
+   * Read-only ancestor messages inherited from the conversation this one
+   * was forked from (root → the fork point), oldest first. Empty unless
+   * this conversation has `forkedFromMessageId` set. These live in a
+   * *different* conversation's tree — they're not part of `messages` and
+   * aren't persisted again by `saveChatMessages` — but the model still
+   * needs them for context, and the UI renders them above this
+   * conversation's own (interactive) messages.
+   */
+  context: UIMessage[];
 };
 
 type TreeRow = {
@@ -28,11 +38,53 @@ type TreeRow = {
   activeChildId: string | null;
 };
 
+function rowToUIMessage(row: Pick<TreeRow, "id" | "role" | "parts" | "content">): UIMessage {
+  return {
+    id: row.id,
+    role: row.role === "ASSISTANT" ? "assistant" : "user",
+    parts: toUIMessageParts(row.parts, row.content),
+  };
+}
+
+/**
+ * Walks the `parentId` chain upward from `messageId` — which may belong to
+ * a *different* conversation than the one being loaded, since that's the
+ * whole point for a forked conversation — and returns root → messageId,
+ * inclusive, oldest first.
+ *
+ * One query per hop. Fork chains (and forks-of-forks) are expected to stay
+ * shallow in practice, so this trades a few extra round-trips for a much
+ * simpler implementation than a recursive SQL query.
+ */
+async function walkAncestors(messageId: string): Promise<UIMessage[]> {
+  const chain: UIMessage[] = [];
+  const visited = new Set<string>();
+  let cursor: string | null = messageId;
+
+  while (cursor) {
+    if (visited.has(cursor)) break; // defensive: never trust a cycle
+    visited.add(cursor);
+
+    const row:any = await prisma.message.findUnique({
+      where: { id: cursor },
+      select: { id: true, role: true, parts: true, content: true, parentId: true },
+    });
+    if (!row) break;
+
+    chain.push(rowToUIMessage(row));
+    cursor = row.parentId;
+  }
+
+  return chain.reverse();
+}
+
 /**
  * Loads the *active* conversation path (root → leaf) by walking `activeChildId`
  * pointers, starting from `Conversation.activeRoot`. Also returns sibling
  * metadata for every message on that path so the UI can render branch
- * previous/next controls without extra round-trips.
+ * previous/next controls without extra round-trips, and — when this
+ * conversation was forked off another one — the read-only ancestor context
+ * leading up to the fork point.
  *
  * @param conversationId - The conversation whose active branch to load.
  */
@@ -41,11 +93,19 @@ export async function loadChatMessages(
 ): Promise<LoadChatMessagesResult> {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { activeRootId: true },
+    select: { activeRootId: true, forkedFromMessageId: true },
   });
 
-  if (!conversation?.activeRootId) {
-    return { messages: [], branches: {} };
+  if (!conversation) {
+    return { messages: [], branches: {}, context: [] };
+  }
+
+  const context = conversation.forkedFromMessageId
+    ? await walkAncestors(conversation.forkedFromMessageId)
+    : [];
+
+  if (!conversation.activeRootId) {
+    return { messages: [], branches: {}, context };
   }
 
   // Single query for the whole tree — cheaper than walking with N round-trips,
@@ -102,13 +162,36 @@ export async function loadChatMessages(
     };
   }
 
-  const messages: UIMessage[] = path.map((row) => ({
-    id: row.id,
-    role: row.role === "ASSISTANT" ? "assistant" : "user",
-    parts: toUIMessageParts(row.parts, row.content),
-  }));
+  const messages: UIMessage[] = path.map(rowToUIMessage);
 
-  return { messages, branches };
+  return { messages, branches, context };
+}
+
+/**
+ * True if `messageId` itself, or any message in its subtree (replies,
+ * replies-to-replies, etc), is the fork anchor for another conversation.
+ *
+ * Deleting a message cascades to its whole subtree via the `parentId` FK
+ * (`onDelete: Cascade`) — if any message down that subtree is another
+ * conversation's `forkedFromMessageId`, that conversation's entire history
+ * would silently go with it. This is the guard `editMessage`/
+ * `regenerateMessage` call before doing an `"inline"` delete, since inline
+ * mode discards a message (and everything under it) outright rather than
+ * branching.
+ */
+export async function hasForksInSubtree(messageId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    WITH RECURSIVE subtree AS (
+      SELECT id FROM "Message" WHERE id = ${messageId}
+      UNION ALL
+      SELECT m.id FROM "Message" m
+      JOIN subtree s ON m."parentId" = s.id
+    )
+    SELECT c.id FROM "Conversation" c
+    JOIN subtree s ON c."forkedFromMessageId" = s.id
+    LIMIT 1
+  `;
+  return rows.length > 0;
 }
 
 type SaveChatMessagesOptions = {
@@ -125,6 +208,13 @@ type SaveChatMessagesOptions = {
  * Already-persisted messages are only content-updated; their `parentId` is
  * never touched.
  *
+ * Fork-aware: if this conversation was forked off another one
+ * (`forkedFromMessageId`) and hasn't saved any of its own messages yet, the
+ * very first message's `parentId` is set to that fork anchor instead of
+ * `null` — but the anchor's own `activeChildId` is deliberately left
+ * untouched, since that pointer drives the *source* conversation's active
+ * path, not this fork's.
+ *
  * @param conversationId - Target conversation ID.
  * @param messages - A root-to-leaf path to persist (system messages are skipped).
  * @param options.updateTitle - When true, auto-titles "New Chat" from the first user message.
@@ -139,13 +229,21 @@ export async function saveChatMessages(
 
   if (relevant.length === 0) return;
 
+  const conversation = await prisma.conversation.findUniqueOrThrow({
+    where: { id: conversationId },
+    select: { title: true, activeRootId: true, forkedFromMessageId: true },
+  });
+
   const existingRows = await prisma.message.findMany({
     where: { id: { in: relevant.map((m) => m.id) } },
     select: { id: true },
   });
   const existingIds = new Set(existingRows.map((r) => r.id));
 
-  let previousId: string | null = null;
+  const isUnstartedFork = !conversation.activeRootId && !!conversation.forkedFromMessageId;
+  const forkAnchorId = isUnstartedFork ? conversation.forkedFromMessageId : null;
+
+  let previousId: string | null = forkAnchorId ?? null;
   let newRootId: string | null = null;
 
   for (const message of relevant) {
@@ -166,13 +264,19 @@ export async function saveChatMessages(
         },
       });
 
-      if (previousId) {
+      if (previousId === null) {
+        // First message overall — no parent, this is a fresh root.
+        newRootId = message.id;
+      } else if (previousId === forkAnchorId) {
+        // First message of a *forked* conversation — its parent lives in
+        // another conversation, so it's still this conversation's own
+        // root, but we must not touch the foreign parent's activeChildId.
+        newRootId = message.id;
+      } else {
         await prisma.message.update({
           where: { id: previousId },
           data: { activeChildId: message.id },
         });
-      } else {
-        newRootId = message.id;
       }
     } else {
       await prisma.message.update({
@@ -188,11 +292,6 @@ export async function saveChatMessages(
     previousId = message.id;
   }
 
-  const conversation = await prisma.conversation.findUniqueOrThrow({
-    where: { id: conversationId },
-    select: { title: true, activeRootId: true },
-  });
-
   const firstUser = relevant.find((message) => message.role === "user");
   const firstUserText = firstUser ? getMessageText(firstUser).trim() : "";
 
@@ -200,9 +299,9 @@ export async function saveChatMessages(
     where: { id: conversationId },
     data: {
       lastMessageAt: new Date(),
-      // Only ever set on a brand-new conversation's first message. Editing
-      // the root later goes through editMessage(), which owns activeRootId
-      // for that case.
+      // Only ever set on a brand-new (or brand-new-fork) conversation's
+      // first message. Editing the root later goes through editMessage(),
+      // which owns activeRootId for that case.
       ...(newRootId && !conversation.activeRootId
         ? { activeRootId: newRootId }
         : {}),
