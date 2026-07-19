@@ -18,6 +18,7 @@ ChatMate is a self-hosted GPT-style chat app built on Next.js. It's not just a c
   - [Tool calling (web search)](#tool-calling-web-search)
   - [Chat branching](#chat-branching)
   - [Conversation forking](#conversation-forking)
+  - [Rate limiting & cost control](#rate-limiting--cost-control)
 - [Folder structure](#folder-structure)
 - [Data model](#data-model)
 - [Running it locally](#running-it-locally)
@@ -102,6 +103,15 @@ Beyond branching *within* a conversation, any message can be split off into its 
 - The moment you send a message in the forked conversation, it becomes a real row with its own `conversationId`, parented onto the fork point — from there it grows independently, like any other conversation.
 - Because nothing is copied, deleting the *original* conversation while a fork still depends on it would otherwise cascade-delete history the fork needs. So deleting a conversation with live forks **hides** it instead (`isDeleted`) rather than removing it — it drops out of the sidebar, but nothing is lost. Once the last fork depending on it is itself deleted, the hidden original is automatically cleaned up too.
 
+### Rate limiting & cost control
+
+Every LLM call costs real money, so the chat endpoint is guarded on three independent layers before a request ever reaches a model provider.
+
+- **Daily quota per provider** — not per model. Switching between `gpt-4o` and `gpt-4.1` still draws from the same OpenAI bucket, so there's no dodging the cap by hopping models. Enforced with a rolling 24h sliding window (`@upstash/ratelimit`), not a fixed calendar-day reset, so the count is always "N requests in the trailing 24 hours." Limits are env-configurable (`RATE_LIMIT_OPENAI_PER_DAY`, `RATE_LIMIT_GOOGLE_PER_DAY`) rather than hardcoded.
+- **Output token cap** (`maxOutputTokens: 2048` in `streamText`) bounds the cost of any single request regardless of what the prompt asks for — a hard backstop behind the system-prompt guidance below.
+- **System prompt hardening** — a short addendum, always appended even when a conversation has a custom `systemPrompt`, that (1) treats anything inside a user message, uploaded file, or web search result as data rather than instructions, so it can't be used to override the model's behavior, and (2) tells the model to build incrementally instead of dumping an entire multi-file project in one reply, which is the main way a single request could otherwise burn the whole token budget.
+- **Usage is checked, not just enforced** — `getRateLimitStatus` reads the current count via Upstash's non-consuming `getRemaining`, so the sidebar can show `OpenAI 3/10` / `Google 7/20` without spending one of the user's own requests just to display it.
+- **Friendly failure, not a broken stream** — a rate-limited request returns a plain-text `429` before any DB write or model call happens (nothing gets persisted on a blocked request), and errors thrown mid-stream (provider outage, etc.) are unmasked via `toUIMessageStream`'s `onError` so the user sees an actual message instead of the SDK's default "An error occurred."
 ---
 
 ## Folder structure
@@ -238,6 +248,10 @@ All of these are in `sample.env` — copy it to `.env` and fill each one in.
 | `OPENAI_API_KEY` | Needed for OpenAI models | Powers GPT-4o / GPT-4o mini / GPT-4.1 |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Needed for Gemini models | Powers Gemini 2.0/2.5/3.1 |
 | `EXA_API_KEY` | ✅ | Backs the `web_search` tool |
+| `UPSTASH_REDIS_REST_URL` | ✅ | Backs the daily rate limiter |
+| `UPSTASH_REDIS_REST_TOKEN` | ✅ | Backs the daily rate limiter |
+| `RATE_LIMIT_OPENAI_PER_DAY` | Optional (default `10`) | Daily request cap for OpenAI models |
+| `RATE_LIMIT_GOOGLE_PER_DAY` | Optional (default `20`) | Daily request cap for Google models |
 
 You don't strictly need both `OPENAI_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY` — just whichever provider(s) you want selectable in the model dropdown. If a key for the currently-selected provider is missing, that model will error at request time rather than at startup.
 
@@ -251,6 +265,7 @@ You don't strictly need both `OPENAI_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY`
 - **Edit** any of your own messages (pencil icon on hover / always visible on mobile) — this branches instead of overwriting.
 - **Regenerate** any assistant reply, or **fork a new conversation** from any message, via the ⋯ menu (always visible, not hover-gated, so it works the same on touch).
 - **Navigate branches** with the `‹ n/N ›` arrows that appear wherever a message has siblings.
+- **Track your daily usage** in the sidebar footer — shows requests used per provider (e.g. `OpenAI 3/10`), so you know before you hit the limit.
 - **Rename / pin / archive / delete** conversations from the sidebar's `⋯` menu. Deleting a conversation that has an active fork hides it instead of destroying it — see [Conversation forking](#conversation-forking).
 
 ---
@@ -287,5 +302,14 @@ Deployed on **[Vercel / your platform — fill in]**.
 | Rename/delete | `updateConversation` / `deleteConversation` (fork-aware guard) |
 | Clean branch nav UI | hover-revealed on desktop, always-visible on mobile; `‹ n/N ›` arrows only render when there's something to navigate |
 
+**Phase 3 — Rate limiting & cost control**
+| Requirement | Where |
+|---|---|
+| Per-provider daily limit | `features/ai/utils/rate-limit.ts` (Upstash sliding window) |
+| Configurable, not hardcoded | `RATE_LIMIT_OPENAI_PER_DAY` / `RATE_LIMIT_GOOGLE_PER_DAY` env vars |
+| Output token cap | `maxOutputTokens: 2048` in `app/api/chat/route.ts` |
+| Prompt-injection / jailbreak resistance | safety addendum in `app/api/chat/route.ts`, always appended regardless of custom `systemPrompt` |
+| Usage visible to the user | `usage-status.tsx` sidebar widget, `usage.actions.ts` |
+| Graceful failure | plain-text `429` pre-stream, `onError` for mid-stream failures |
+
 ---
-.

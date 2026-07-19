@@ -12,4 +12,7 @@ export const queryKeys = {
       byConversation: (conversationId: string) =>
         ["branches", conversationId] as const,
     },
+    usage: {
+      status: ["usage-status"] as const,
+    },
   };

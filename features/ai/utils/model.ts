@@ -8,12 +8,11 @@ export type ModelOption = {
 };
 
 export const MODEL_OPTIONS: ModelOption[] = [
-  { id: "openai:gpt-4o-mini", label: "GPT-4o mini", provider: "openai" },
-  { id: "openai:gpt-4o", label: "GPT-4o", provider: "openai" },
-  { id: "openai:gpt-4.1", label: "GPT-4.1", provider: "openai" },
+  { id: "google:gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", provider: "google" },
   { id: "google:gemini-2.0-flash", label: "Gemini 2.0 Flash", provider: "google" },
   { id: "google:gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "google" },
-  { id: "google:gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", provider: "google" },
+  { id: "openai:gpt-4o-mini", label: "GPT-4o mini", provider: "openai" },
+  { id: "openai:gpt-4.1-nano", label: "GPT-4.1 Nano", provider: "openai" }, 
 ];
 
 /** Default OpenAI model used when a conversation has no override. */
@@ -39,4 +38,10 @@ export function getChatModel(modelId?: string | null) {
 
 export function isKnownModel(id?: string | null): id is string {
   return !!id && MODEL_OPTIONS.some((m) => m.id === id);
+}
+
+/** Resolves a model id to its provider, falling back to the default model's provider. */
+export function getModelProvider(modelId?: string | null): ModelOption["provider"] {
+  const id = isKnownModel(modelId) ? modelId : DEFAULT_CHAT_MODEL;
+  return MODEL_OPTIONS.find((m) => m.id === id)!.provider;
 }

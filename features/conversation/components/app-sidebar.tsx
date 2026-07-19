@@ -43,7 +43,8 @@ import {
   useUpdateConversation,
 } from "@/features/conversation/hooks/use-conversation";
 import { cn } from "@/lib/utils";
-import { Moon, Sun } from "lucide-react"
+import { Moon, Sun } from "lucide-react";
+import { UsageStatus } from "@/features/conversation/components/usage-status";
 
 type Conversation = NonNullable<
   ReturnType<typeof useConversations>["data"]
@@ -56,10 +57,9 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { data: conversations, isLoading } = useConversations();
 
-  
-// Get the active conversation id from the pathname (e.g. /c/123)
-// pathname.split("/")[2] is the third part of the pathname (the conversation id)
-//  firstparam = / , secondparam = c , thirdparam = 123
+  // Get the active conversation id from the pathname (e.g. /c/123)
+  // pathname.split("/")[2] is the third part of the pathname (the conversation id)
+  //  firstparam = / , secondparam = c , thirdparam = 123
   const activeId = pathname.startsWith("/c/")
     ? pathname.split("/")[2]
     : undefined;
@@ -74,7 +74,13 @@ export function AppSidebar() {
               className="font-semibold tracking-tight"
               render={<Link href="/" />}
             >
-              <Image src="/logo.png" alt="logo" width={50} height={50} className="rounded-sm" />
+              <Image
+                src="/logo.png"
+                alt="logo"
+                width={50}
+                height={50}
+                className="rounded-sm"
+              />
               <span>ChatMate</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -103,6 +109,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <UsageStatus />
         <SidebarFooterMenu />
       </SidebarFooter>
       <SidebarRail />
@@ -161,7 +168,7 @@ function ChatItem({
 }) {
   const updateConversation = useUpdateConversation();
   const deleteConversation = useDeleteConversation(
-    isActive ? conversation.id : undefined
+    isActive ? conversation.id : undefined,
   );
 
   /** Prompts the user to rename the conversation and persists the new title. */
@@ -231,12 +238,15 @@ function SidebarFooterMenu() {
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <Button variant="outline" size="icon"
-        onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>
-                  <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-                  <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-                  <span className="sr-only">Toggle theme</span>
-                </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+        >
+          <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+          <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+          <span className="sr-only">Toggle theme</span>
+        </Button>
       </SidebarMenuItem>
       <SidebarMenuItem>
         <div className="flex items-center gap-2 px-1 py-1.5">
