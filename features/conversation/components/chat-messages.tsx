@@ -16,6 +16,8 @@ import {
 } from "@/components/ai-elements/message";
 import { Loader } from "@/components/ai-elements/loader";
 import { cn } from "@/lib/utils";
+import type { BranchInfo } from "@/features/ai/actions/chat-store";
+import { BranchNav } from "./branch-nav";
 
 type WebSearchResult = { title: string; url: string; snippet: string };
 
@@ -99,30 +101,57 @@ function WebSearchPartView({ part }: { part: WebSearchPart }) {
 type ChatMessagesProps = {
   messages: UIMessage[];
   status: ChatStatus;
+  /** Sibling/branch metadata keyed by message id, from loadChatMessages(). */
+  branches?: Record<string, BranchInfo>;
+  /** Called when the user picks a different sibling at a fork. */
+  onSwitchBranch?: (parentId: string | null, childId: string) => void;
+  /** True while a branch switch is in flight — disables nav to avoid double-clicks. */
+  isSwitchingBranch?: boolean;
 };
 
-export function ChatMessages({ messages, status }: ChatMessagesProps) {
+export function ChatMessages({
+  messages,
+  status,
+  branches,
+  onSwitchBranch,
+  isSwitchingBranch,
+}: ChatMessagesProps) {
   const isWaiting = status === "submitted" && messages.at(-1)?.role === "user";
 
   return (
     <Conversation>
       <ConversationContent className="py-8">
-        {messages.map((message) => (
-          <Message key={message.id} from={message.role}>
-            <MessageContent>
-              {message.parts.map((part, i) => {
-                if (isTextUIPart(part)) {
-                  return <MessageResponse key={i}>{part.text}</MessageResponse>;
-                }
-                if (isWebSearchPartType(part)) {
-                  const searchPart = part as unknown as WebSearchPart;
-                  return <WebSearchPartView key={searchPart.toolCallId ?? i} part={searchPart} />;
-                }
-                return null;
-              })}
-            </MessageContent>
-          </Message>
-        ))}
+        {messages.map((message) => {
+          const branch = branches?.[message.id];
+
+          return (
+            <Message key={message.id} from={message.role}>
+              <MessageContent>
+                {message.parts.map((part, i) => {
+                  if (isTextUIPart(part)) {
+                    return <MessageResponse key={i}>{part.text}</MessageResponse>;
+                  }
+                  if (isWebSearchPartType(part)) {
+                    const searchPart = part as unknown as WebSearchPart;
+                    return <WebSearchPartView key={searchPart.toolCallId ?? i} part={searchPart} />;
+                  }
+                  return null;
+                })}
+              </MessageContent>
+
+              {branch && onSwitchBranch ? (
+                <BranchNav
+                  index={branch.index}
+                  total={branch.siblingIds.length}
+                  disabled={isSwitchingBranch}
+                  onNavigate={(nextIndex) =>
+                    onSwitchBranch(branch.parentId, branch.siblingIds[nextIndex])
+                  }
+                />
+              ) : null}
+            </Message>
+          );
+        })}
 
         {isWaiting ? (
           <Message from="assistant">

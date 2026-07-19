@@ -20,9 +20,17 @@ import {
 /**
  * POST /api/chat — Streams an AI assistant reply for a conversation.
  *
- * Validates auth and ownership, persists the user message, then streams the
- * assistant response via the AI SDK. Supports per-message model selection
- * and an optional web-search tool. Final messages are saved when the stream ends.
+ * Validates auth and ownership, persists the user message onto the active
+ * branch, then streams the assistant response via the AI SDK. Supports
+ * per-message model selection and an optional web-search tool. Final
+ * messages are saved when the stream ends.
+ *
+ * Branching note: `message` is expected to be the tail of whatever path the
+ * client currently has loaded (the active path on a normal send, or a
+ * trimmed ancestor path after an edit/regenerate + `setMessages` +
+ * `regenerate()` on the client). `parentId` for any newly-created message is
+ * inferred server-side from its predecessor in that path — see
+ * `saveChatMessages`.
  */
 export async function POST(req: Request) {
   await auth.protect();
@@ -63,7 +71,7 @@ export async function POST(req: Request) {
     });
   }
 
-  const previousMessages = await loadChatMessages(id);
+  const { messages: previousMessages } = await loadChatMessages(id);
 
   const alreadySaved = previousMessages.some(
     (storedMessage) => storedMessage.id === message.id,
@@ -74,7 +82,10 @@ export async function POST(req: Request) {
     : [...previousMessages, message];
 
   if (!alreadySaved) {
-    await saveChatMessages(id, [message]);
+    // Save the whole path (not just `[message]`) so the new message's
+    // parentId can be inferred from its predecessor. Existing messages in
+    // `messages` are no-op content updates.
+    await saveChatMessages(id, messages);
   }
 
    const convoSystemPrompt ="You are ChatMate , a helpful assistant You have a web_search tool — use it whenever the question needs current information (news, prices, recent events, anything that may have changed since your training) or you're not confident in your knowledge. Don't guess when you can check. Format responses in markdown: use headers for structure in longer answers, bullet or numbered lists for steps/options, tables for comparisons, fenced code blocks with a language tag for any code, and LaTeX ($...$ or $$...$$) for math. Use mermaid diagrams (```mermaid) when explaining flows, architectures, or relationships that are easier to see than read."

@@ -37,6 +37,9 @@ model Conversation {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  activeRootId String?  @unique
+  activeRoot   Message? @relation("ConversationActiveRoot", fields: [activeRootId], references: [id], onDelete: SetNull)
+
   messages Message[]
 
   @@index([userId, lastMessageAt(sort: Desc)])
@@ -65,12 +68,20 @@ model Message {
    content        String @db.Text
    parts          Json?  // 
    metadata       Json? 
+   parentId      String?
+  activeChildId String? @unique
 
-   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  parent       Message?  @relation("MessageTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Message[] @relation("MessageTree")
+  activeChild  Message?  @relation("ActiveChild", fields: [activeChildId], references: [id], onDelete: SetNull)
+  activeParent Message?  @relation("ActiveChild")
+  activeForConversation Conversation? @relation("ConversationActiveRoot")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
    createdAt DateTime @default(now())
    updatedAt DateTime @updatedAt
 
    @@index([conversationId, createdAt(sort: Desc)])
+   @@index([conversationId, parentId]) 
    
 }

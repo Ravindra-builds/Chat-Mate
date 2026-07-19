@@ -9,7 +9,7 @@ type ConversationPageProps = {
   };
 
 /**
- * Conversation page — loads messages and renders the chat UI for a given ID.
+ * Conversation page — loads the active branch and renders the chat UI for a given ID.
  */
 const page = async({params}:ConversationPageProps) => {
     const {id} = await params;
@@ -21,8 +21,9 @@ const page = async({params}:ConversationPageProps) => {
       notFound();
     }
 
-    const initialMessages = await loadChatMessages(id);
-    
+    // `branches` (sibling metadata per message id) isn't consumed yet — it
+    // gets wired into ConversationView / MessageBranch in Step 4.
+    const { messages: initialMessages } = await loadChatMessages(id);
 
   return (
     <ConversationView
