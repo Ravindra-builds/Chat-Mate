@@ -5,8 +5,8 @@ import React from 'react'
  */
 const AuthLayout = ({ children }: { children: React.ReactNode }) => {
   return (
-    <section className='flex flex-col h-screen items-center justify-center '>
-        <div className='w-full max-w-md'>
+    <section className='flex flex-col h-screen items-center justify-center  '>
+        <div className='max-w-md sm:mx-auto'>
             {children}
         </div>
     </section>

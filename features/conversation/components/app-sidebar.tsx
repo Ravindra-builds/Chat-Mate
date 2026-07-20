@@ -81,7 +81,9 @@ export function AppSidebar() {
                 height={50}
                 className="rounded-sm"
               />
-              <span>ChatMate</span>
+              <span className="bg-gradient-to-r from-[#1D4ED8] via-[#06B6D4] to-[#14B8A6] bg-clip-text font-bold text-transparent">
+                ChatMate
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
