@@ -35,6 +35,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -56,6 +57,12 @@ type Conversation = NonNullable<
 export function AppSidebar() {
   const pathname = usePathname();
   const { data: conversations, isLoading } = useConversations();
+  const { isMobile, setOpenMobile } = useSidebar();
+
+
+  const closeOnMobile = () => {
+    if (isMobile) setOpenMobile(false);
+  };
 
   // Get the active conversation id from the pathname (e.g. /c/123)
   // pathname.split("/")[2] is the third part of the pathname (the conversation id)
@@ -72,7 +79,7 @@ export function AppSidebar() {
             <SidebarMenuButton
               size="lg"
               className="font-semibold tracking-tight"
-              render={<Link href="/" />}
+              render={<Link href="/" onClick={closeOnMobile} />}
             >
               <Image
                 src="/logo.png"
@@ -87,7 +94,10 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="New chat" render={<Link href="/" />}>
+            <SidebarMenuButton
+              tooltip="New chat"
+              render={<Link href="/" onClick={closeOnMobile} />}
+            >
               <PlusIcon />
               <span>New chat</span>
             </SidebarMenuButton>
@@ -104,6 +114,7 @@ export function AppSidebar() {
                 conversations={conversations}
                 isLoading={isLoading}
                 activeId={activeId}
+                onNavigate={closeOnMobile}
               />
             </SidebarMenu>
           </SidebarGroupContent>
@@ -124,10 +135,12 @@ function ChatList({
   conversations,
   isLoading,
   activeId,
+  onNavigate,
 }: {
   conversations: Conversation[] | undefined;
   isLoading: boolean;
   activeId: string | undefined;
+  onNavigate: () => void;
 }) {
   if (isLoading) {
     return (
@@ -154,6 +167,7 @@ function ChatList({
           key={conversation.id}
           conversation={conversation}
           isActive={activeId === conversation.id}
+          onNavigate={onNavigate}
         />
       ))}
     </>
@@ -164,9 +178,11 @@ function ChatList({
 function ChatItem({
   conversation,
   isActive,
+  onNavigate,
 }: {
   conversation: Conversation;
   isActive: boolean;
+  onNavigate: () => void;
 }) {
   const updateConversation = useUpdateConversation();
   const deleteConversation = useDeleteConversation(
@@ -185,7 +201,7 @@ function ChatItem({
       <SidebarMenuButton
         isActive={isActive}
         tooltip={conversation.title}
-        render={<Link href={`/c/${conversation.id}`} />}
+        render={<Link href={`/c/${conversation.id}`} onClick={onNavigate} />}
         className={cn(isActive && "font-medium")}
       >
         <span className="truncate">{conversation.title}</span>
