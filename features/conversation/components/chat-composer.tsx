@@ -90,7 +90,7 @@ export function ChatComposer({
               </PromptInputSelectTrigger>
               <PromptInputSelectContent>
                 {MODEL_OPTIONS.map((option) => (
-                  <PromptInputSelectItem key={option.id} value={option.label}>
+                  <PromptInputSelectItem key={option.id} value={option.id}>
                     {option.label}
                   </PromptInputSelectItem>
                 ))}

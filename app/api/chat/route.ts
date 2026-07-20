@@ -3,7 +3,7 @@ import {
   saveChatMessages,
 } from "@/features/ai/actions/chat-store";
 import { DEFAULT_CHAT_MODEL, getChatModel, getModelProvider } from "@/features/ai/utils/model";
-import { checkChatRateLimit } from "@/features/ai/utils/rate-limit";
+import { checkChatRateLimit, getRateLimitStatus } from "@/features/ai/utils/rate-limit";
 import { webSearchTool } from "@/features/ai/utils/tools";
 import { requireUser } from "@/features/auth/action/require-user";
 import { prisma } from "@/lib/db";
@@ -75,17 +75,35 @@ export async function POST(req: Request) {
   const rateLimit = await checkChatRateLimit(user.id, provider);
 
   if (!rateLimit.success) {
+    if (!rateLimit.configured) {
+      // Not a real quota hit — the rate limiter itself is misconfigured.
+      // Block anyway (fail closed, protects the bill) but say so plainly
+      // rather than pretending this is a normal daily limit.
+      return new Response(
+        "Chat is temporarily unavailable. Please try again shortly.",
+        { status: 503 }
+      );
+    }
     const resetIn = Math.max(0, rateLimit.reset - Date.now());
     const hours = Math.ceil(resetIn / (60 * 60 * 1000));
+    const otherProvider = provider === "openai" ? "google" : "openai";
+    const otherLabel = otherProvider === "openai" ? "OpenAI" : "Google";
+    const thisLabel = provider === "openai" ? "OpenAI" : "Google";
+
+    const status = await getRateLimitStatus(user.id);
+    const otherRemaining = status?.find((s) => s.provider === otherProvider)?.remaining ?? null;
+
+    const message =
+      otherRemaining && otherRemaining > 0
+        ? `Daily limit reached for ${thisLabel} (${rateLimit.limit}/day). Try switching to ${otherLabel} — you still have ${otherRemaining} left today.`
+        : `You've used today's limit for both providers. Come back in about ${hours}h.`;
+
     // Plain text on purpose: useChat's onError reads the body as-is via
     // res.text(), so a JSON body would show up as a raw blob in the UI.
-    return new Response(
-      `Daily limit reached for ${provider === "openai" ? "OpenAI" : "Google"} models (${rateLimit.limit}/day). Try again in about ${hours}h, or switch providers.`,
-      {
-        status: 429,
-        headers: { "Retry-After": Math.ceil(resetIn / 1000).toString() },
-      }
-    );
+    return new Response(message, {
+      status: 429,
+      headers: { "Retry-After": Math.ceil(resetIn / 1000).toString() },
+    });
   }
 
   // Persist the model choice so a page refresh keeps using the same one.
