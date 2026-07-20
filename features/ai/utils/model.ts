@@ -11,9 +11,7 @@ export const MODEL_OPTIONS: ModelOption[] = [
   { id: "openai:gpt-4o-mini", label: "GPT-4o mini", provider: "openai" },
   { id: "openai:gpt-4.1-nano", label: "GPT-4.1 Nano", provider: "openai" },
   { id: "google:gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", provider: "google" },
-  { id: "google:gemini-2.0-flash", label: "Gemini 2.0 Flash", provider: "google" },
-  { id: "google:gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "google" },
-   
+ { id: "google:gemini-3.5-flash", label: "Gemini 3.5 Flash", provider: "google" },
 ];
 
 /** Default OpenAI model used when a conversation has no override. */
