@@ -69,6 +69,8 @@ export async function POST(req: Request) {
     return new Response("Conversation not found", { status: 404 });
   }
 
+  
+
   const modelId = model || conversation.model || DEFAULT_CHAT_MODEL;
 
   const provider = getModelProvider(modelId);

@@ -78,7 +78,7 @@ export function ChatComposer({
       <PromptInput onSubmit={handleSubmit}>
         <PromptInputBody>
           <PromptInputTextarea
-            placeholder="Message ChatMate"
+            placeholder="Chat with your mate..."
             className="min-h-10 max-h-32 sm:min-h-16 sm:max-h-48"
           />
         </PromptInputBody>

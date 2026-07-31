@@ -147,30 +147,58 @@ export const ConversationView = ({
     }
   };
 
-  /** Regenerates an assistant reply as a new sibling branch at that fork. */
-  const handleRegenerateMessage = async (messageId: string) => {
-    if (isBranchBusy || isStreaming) return false;
-    setIsBranchBusy(true);
-    try {
-      const result = await regenerateMessage(messageId, "branch");
-      setMessages(result.messages);
-      queryClient.setQueryData(
-        queryKeys.branches.byConversation(conversationId),
-        result.branches,
-      );
-      await regenerate();
-      return true;
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not regenerate response",
-      );
-      return false;
-    } finally {
-      setIsBranchBusy(false);
-    }
-  };
+  /** Does the actual regenerate call: mutate the tree, load the trimmed
+     * path, hand it to useChat, then let it stream a fresh reply. */
+    const runRegenerate = async (messageId: string, mode: "branch" | "inline") => {
+        setIsBranchBusy(true);
+        try {
+            const result = await regenerateMessage(messageId, mode);
+            setMessages(result.messages);
+            queryClient.setQueryData(
+                queryKeys.branches.byConversation(conversationId),
+                result.branches
+            );
+            await regenerate();
+            return true;
+        } catch (error) {
+            toast.error(
+                error instanceof Error ? error.message : "Could not regenerate response"
+            );
+            return false;
+        } finally {
+            setIsBranchBusy(false);
+        }
+    };
+
+    /**
+     * Regenerating the last message is safe and non-destructive (branch
+     * mode just adds a sibling) — no confirmation needed. Regenerating a
+     * *middle* message is destructive by design (everything after it gets
+     * deleted, see runRegenerate's "inline" path), so that one gets a
+     * confirm step first.
+     */
+    const handleRegenerateMessage = async (messageId: string) => {
+        if (isBranchBusy || isStreaming) return false;
+
+        const isLastMessage = messages.at(-1)?.id === messageId;
+        if (isLastMessage) {
+            return runRegenerate(messageId, "inline");
+        }
+
+        toast("Regenerate this response?", {
+            description:
+                "Every message after it will be permanently deleted from this conversation.",
+            action: {
+                label: "Regenerate",
+                onClick: () => void runRegenerate(messageId, "inline"),
+            },
+            cancel: {
+                label: "Cancel",
+                onClick: () => {},
+            },
+        });
+        return false; // nothing happened yet — waiting on the confirm toast
+    };
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">

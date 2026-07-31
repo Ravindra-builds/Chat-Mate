@@ -223,10 +223,24 @@ export async function regenerateMessage(
         "Can't discard this reply — another conversation was branched from it. Use branch mode instead."
       );
     }
+    // Deleting cascades through this message's whole subtree, and the FK's
+    // onDelete: SetNull automatically clears the parent's activeChildId —
+    // no extra step needed here for that case.
     await prisma.message.delete({ where: { id: messageId } });
+  } else {
+    // "branch": don't create the new sibling yet (it doesn't exist until
+    // the new reply streams in and gets saved) — but we still have to
+    // unplug this message from the active path *right now*, in the same
+    // request. Otherwise anything that reads the active path before the
+    // new reply is saved (e.g. /api/chat, moments from now) would still
+    // walk straight through this message — and everything below it — as
+    // if nothing happened, and the new reply would end up attached in the
+    // wrong place once it does save.
+    await prisma.message.update({
+      where: { id: message.parentId },
+      data: { activeChildId: null },
+    });
   }
-  // "branch": no mutation needed here — saveChatMessages will create a
-  // fresh sibling and repoint activeChildId once the new reply streams in.
 
   revalidatePath(`/c/${message.conversationId}`);
   return loadAncestorPath(message.conversationId, message.parentId);

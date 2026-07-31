@@ -35,7 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader } from "@/components/ai-elements/loader";
+import { Loader, TypingIndicator } from "@/components/ai-elements/loader";
 import { cn } from "@/lib/utils";
 import type { BranchInfo } from "@/features/ai/actions/chat-store";
 import { getMessageText } from "@/features/ai/utils/message-parts";
@@ -46,7 +46,11 @@ type WebSearchResult = { title: string; url: string; snippet: string };
 type WebSearchPart = {
   type: "tool-search_web";
   toolCallId: string;
-  state: "input-streaming" | "input-available" | "output-available" | "output-error";
+  state:
+    | "input-streaming"
+    | "input-available"
+    | "output-available"
+    | "output-error";
   input?: { query?: string };
   output?: { results?: WebSearchResult[]; error?: string };
   errorText?: string;
@@ -56,7 +60,7 @@ type WebSearchPart = {
  *  discriminated per-state, so our flattened WebSearchPart shape can't satisfy a
  *  `part is WebSearchPart` predicate. We cast explicitly where this is used instead. */
 function isWebSearchPartType(part: UIMessage["parts"][number]): boolean {
-   return part.type === "tool-search_web";
+  return part.type === "tool-search_web";
 }
 
 /** Live "Searching…" status while the tool runs, collapsible source list once it's done. */
@@ -96,13 +100,16 @@ function WebSearchPartView({ part }: { part: WebSearchPart }) {
           {results.length} source{results.length > 1 ? "s" : ""}
         </span>
         <ChevronDownIcon
-          className={cn("ml-auto size-3.5 transition-transform", open && "rotate-180")}
+          className={cn(
+            "ml-auto size-3.5 transition-transform",
+            open && "rotate-180",
+          )}
         />
       </button>
       {open && (
         <ul className="space-y-1 border-t px-3 py-2">
           {results.map((r) => (
-            <li key={r.url} >
+            <li key={r.url}>
               <a
                 href={r.url}
                 target="_blank"
@@ -130,7 +137,12 @@ function MessagePartsView({ message }: { message: UIMessage }) {
         }
         if (isWebSearchPartType(part)) {
           const searchPart = part as unknown as WebSearchPart;
-          return <WebSearchPartView key={searchPart.toolCallId ?? i} part={searchPart} />;
+          return (
+            <WebSearchPartView
+              key={searchPart.toolCallId ?? i}
+              part={searchPart}
+            />
+          );
         }
         return null;
       })}
@@ -243,7 +255,11 @@ export function ChatMessages({
             </div>
 
             {context.map((message) => (
-              <Message key={message.id} from={message.role} className="opacity-60">
+              <Message
+                key={message.id}
+                from={message.role}
+                className="opacity-60"
+              >
                 <MessageContent>
                   <MessagePartsView message={message} />
                 </MessageContent>
@@ -260,6 +276,10 @@ export function ChatMessages({
           const branch = branches?.[message.id];
           const isUser = message.role === "user";
           const isEditingThis = editingId === message.id;
+          const isStreamingThis =
+            !isUser &&
+            status === "streaming" &&
+            message.id === messages.at(-1)?.id;
 
           return (
             <Message key={message.id} from={message.role}>
@@ -311,14 +331,22 @@ export function ChatMessages({
               )}
 
               {!isEditingThis ? (
-                <div className={cn("flex items-center gap-1", isUser && "justify-end")}>
+                <div
+                  className={cn(
+                    "flex items-center gap-1",
+                    isUser && "justify-end",
+                  )}
+                >
                   {branch && onSwitchBranch ? (
                     <BranchNav
                       index={branch.index}
                       total={branch.siblingIds.length}
                       disabled={isBranchBusy}
                       onNavigate={(nextIndex) =>
-                        onSwitchBranch(branch.parentId, branch.siblingIds[nextIndex])
+                        onSwitchBranch(
+                          branch.parentId,
+                          branch.siblingIds[nextIndex],
+                        )
                       }
                     />
                   ) : null}
@@ -334,7 +362,7 @@ export function ChatMessages({
                       tooltip="Copy"
                       onClick={() => void copyMessage(message)}
                     >
-                      <CopyIcon />
+                      {!isStreamingThis? <CopyIcon /> : null}
                     </MessageAction>
 
                     {isUser && onEditMessage ? (
@@ -354,10 +382,16 @@ export function ChatMessages({
                     (regenerate / fork) are discoverable without hovering,
                     same as ChatGPT's kebab menu.
                   */}
-                  {!isUser && (onRegenerateMessage || onForkConversation) ? (
+                  {!isUser && (onRegenerateMessage || onForkConversation) && !isStreamingThis ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger
-                        render={<Button type="button" size="icon-sm" variant="ghost" />}
+                        render={
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                          />
+                        }
                       >
                         <MoreHorizontalIcon className="size-3.5" />
                         <span className="sr-only">More actions</span>
@@ -378,7 +412,7 @@ export function ChatMessages({
                             onClick={() => onForkConversation(message.id)}
                           >
                             <GitBranchIcon />
-                             new branch
+                            new branch
                           </DropdownMenuItem>
                         ) : null}
                       </DropdownMenuContent>
@@ -393,7 +427,7 @@ export function ChatMessages({
         {isWaiting ? (
           <Message from="assistant">
             <MessageContent>
-              <Loader />
+              <TypingIndicator />
             </MessageContent>
           </Message>
         ) : null}
