@@ -55,6 +55,12 @@ type WebSearchPart = {
   output?: { results?: WebSearchResult[]; error?: string };
   errorText?: string;
 };
+function messageHasVisibleContent(message: UIMessage): boolean {
+  return message.parts.some((part) => {
+    if (isTextUIPart(part)) return part.text.trim().length > 0;
+    return isWebSearchPartType(part);
+  });
+}
 
 /** Plain boolean check (not a type predicate) — the SDK's UIMessagePart union is
  *  discriminated per-state, so our flattened WebSearchPart shape can't satisfy a
@@ -76,8 +82,6 @@ function WebSearchPartView({ part }: { part: WebSearchPart }) {
   const [open, setOpen] = useState(false);
   const query = part.input?.query;
 
-  
-
   if (part.state === "input-streaming" || part.state === "input-available") {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -95,8 +99,10 @@ function WebSearchPartView({ part }: { part: WebSearchPart }) {
     );
   }
 
-  const results = (part.output?.results ?? []).filter((r) => isSafeHttpUrl(r.url));
-if (results.length === 0) return null;
+  const results = (part.output?.results ?? []).filter((r) =>
+    isSafeHttpUrl(r.url),
+  );
+  if (results.length === 0) return null;
 
   return (
     <div className="rounded-lg border bg-muted/30">
@@ -290,6 +296,8 @@ export function ChatMessages({
             !isUser &&
             status === "streaming" &&
             message.id === messages.at(-1)?.id;
+          const isThinking =
+            isStreamingThis && !messageHasVisibleContent(message);
 
           return (
             <Message key={message.id} from={message.role}>
@@ -336,7 +344,11 @@ export function ChatMessages({
                 </div>
               ) : (
                 <MessageContent>
-                  <MessagePartsView message={message} />
+                  {isThinking ? (
+                    <TypingIndicator />
+                  ) : (
+                    <MessagePartsView message={message} />
+                  )}
                 </MessageContent>
               )}
 
@@ -372,7 +384,7 @@ export function ChatMessages({
                       tooltip="Copy"
                       onClick={() => void copyMessage(message)}
                     >
-                      {!isStreamingThis? <CopyIcon /> : null}
+                      {!isStreamingThis ? <CopyIcon /> : null}
                     </MessageAction>
 
                     {isUser && onEditMessage ? (
@@ -392,7 +404,9 @@ export function ChatMessages({
                     (regenerate / fork) are discoverable without hovering,
                     same as ChatGPT's kebab menu.
                   */}
-                  {!isUser && (onRegenerateMessage || onForkConversation) && !isStreamingThis ? (
+                  {!isUser &&
+                  (onRegenerateMessage || onForkConversation) &&
+                  !isStreamingThis ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={
