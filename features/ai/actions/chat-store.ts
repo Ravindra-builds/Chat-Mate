@@ -56,16 +56,18 @@ function rowToUIMessage(row: Pick<TreeRow, "id" | "role" | "parts" | "content">)
  * shallow in practice, so this trades a few extra round-trips for a much
  * simpler implementation than a recursive SQL query.
  */
+type AncestorRow = Pick<TreeRow, "id" | "role" | "parts" | "content" | "parentId">;
+
 async function walkAncestors(messageId: string): Promise<UIMessage[]> {
   const chain: UIMessage[] = [];
   const visited = new Set<string>();
   let cursor: string | null = messageId;
 
   while (cursor) {
-    if (visited.has(cursor)) break; // defensive: never trust a cycle
+    if (visited.has(cursor)) break;
     visited.add(cursor);
 
-    const row:any = await prisma.message.findUnique({
+    const row: AncestorRow | null = await prisma.message.findUnique({
       where: { id: cursor },
       select: { id: true, role: true, parts: true, content: true, parentId: true },
     });

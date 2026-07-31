@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
+import { useState } from "react";
+import { RenameDialog } from "./rename-dialog";
+
 import {
   MoreHorizontalIcon,
   PencilIcon,
@@ -188,12 +191,13 @@ function ChatItem({
   const deleteConversation = useDeleteConversation(
     isActive ? conversation.id : undefined,
   );
+  const [renameOpen, setRenameOpen] = useState(false);
 
-  /** Prompts the user to rename the conversation and persists the new title. */
-  function handleRename() {
-    const next = window.prompt("Rename chat", conversation.title);
-    if (!next || next.trim() === conversation.title) return;
-    updateConversation.mutate({ id: conversation.id, title: next });
+  function handleRenameSave(title: string) {
+    updateConversation.mutate(
+      { id: conversation.id, title },
+      { onSuccess: () => setRenameOpen(false) },
+    );
   }
 
   return (
@@ -210,17 +214,14 @@ function ChatItem({
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <SidebarMenuAction
-              showOnHover
-              className="data-popup-open:bg-sidebar-accent"
-            />
+            <SidebarMenuAction showOnHover className="data-popup-open:bg-sidebar-accent" />
           }
         >
           <MoreHorizontalIcon />
           <span className="sr-only">Chat actions</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="right" align="start">
-          <DropdownMenuItem onClick={handleRename}>
+          <DropdownMenuItem onClick={() => setRenameOpen(true)}>
             <PencilIcon />
             Rename
           </DropdownMenuItem>
@@ -245,6 +246,14 @@ function ChatItem({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <RenameDialog
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        currentTitle={conversation.title}
+        onSave={handleRenameSave}
+        isSaving={updateConversation.isPending}
+      />
     </SidebarMenuItem>
   );
 }

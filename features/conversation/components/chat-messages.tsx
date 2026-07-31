@@ -62,11 +62,21 @@ type WebSearchPart = {
 function isWebSearchPartType(part: UIMessage["parts"][number]): boolean {
   return part.type === "tool-search_web";
 }
+function isSafeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 /** Live "Searching…" status while the tool runs, collapsible source list once it's done. */
 function WebSearchPartView({ part }: { part: WebSearchPart }) {
   const [open, setOpen] = useState(false);
   const query = part.input?.query;
+
+  
 
   if (part.state === "input-streaming" || part.state === "input-available") {
     return (
@@ -85,8 +95,8 @@ function WebSearchPartView({ part }: { part: WebSearchPart }) {
     );
   }
 
-  const results = part.output?.results ?? [];
-  if (results.length === 0) return null;
+  const results = (part.output?.results ?? []).filter((r) => isSafeHttpUrl(r.url));
+if (results.length === 0) return null;
 
   return (
     <div className="rounded-lg border bg-muted/30">

@@ -341,7 +341,8 @@ export const MessageResponse = memo(
         className,
       )}
       plugins={streamdownPlugins}
-      linkSafety={linkSafety ?? { enabled: false }}
+      // Restrict rendered markdown links to http/https by defaul
+      linkSafety={linkSafety ?? { enabled: true }}
       {...props}
     />
   ),
