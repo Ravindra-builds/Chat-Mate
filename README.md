@@ -14,7 +14,7 @@
 [![Vercel AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-v7-black?logo=vercel)](https://sdk.vercel.ai)
 [![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
 
-[**Live Demo**](https://chat-mate-jade-one.vercel.app) · [**Repo**](https://github.com/Ravindra-builds/Chat-Mate)
+[**Live Demo**](https://chat-mate-jade-one.vercel.app) · [**Repo**](https://github.com/Ravindra-builds/Chat-Mate)· [**Blog On Branching**](https://rvindra.hashnode.dev/how-i-built-chat-branching-forking)
 
 </div>
 
