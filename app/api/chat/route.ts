@@ -4,10 +4,14 @@ import {
 } from "@/features/ai/actions/chat-store";
 import { DEFAULT_CHAT_MODEL, getChatModel, getModelProvider } from "@/features/ai/utils/model";
 import { checkChatRateLimit, getRateLimitStatus } from "@/features/ai/utils/rate-limit";
-import { webSearchTool } from "@/features/ai/utils/tools";
+import { webSearchTool, createSaveMemoryTool } from "@/features/ai/utils/tools";
 import { requireUser } from "@/features/auth/action/require-user";
 import { prisma } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
+import { after } from "next/server";
+import { retrieveMemoryContext, syncConversationMemoryIfDue } from "@/features/memory/actions";
+import { getMessageText } from "@/features/ai/utils/message-parts";
+
 import {
   convertToModelMessages,
   createIdGenerator,
@@ -129,6 +133,11 @@ export async function POST(req: Request) {
     await saveChatMessages(id, ownMessages);
   }
 
+  const isFirstTurn = previousMessages.length === 0;
+  const memoryContext = isFirstTurn
+    ? await retrieveMemoryContext(user.id, getMessageText(message))
+    : null;
+
   const convoSystemPrompt =
     "You are ChatMate , a helpful assistant You have a web_search tool — use it whenever the question needs current information (news, prices, recent events, anything that may have changed since your training) or you're not confident in your knowledge. Don't guess when you can check. Format responses in markdown: use headers for structure in longer answers, bullet or numbered lists for steps/options, tables for comparisons, fenced code blocks with a language tag for any code, and LaTeX ($...$ or $$...$$) for math. Use mermaid diagrams (```mermaid) when explaining flows, architectures, or relationships that are easier to see than read.";
 
@@ -137,9 +146,15 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: getChatModel(modelId),
-    system: (conversation.systemPrompt ?? convoSystemPrompt) + safetyAddendum,
+    system:
+      (conversation.systemPrompt ?? convoSystemPrompt) +
+      (memoryContext ? `\n\n${memoryContext}` : "") +
+      safetyAddendum,
     messages: await convertToModelMessages([...context, ...ownMessages]),
-    tools: { search_web: webSearchTool },
+    tools: {
+      search_web: webSearchTool,
+      save_memory: createSaveMemoryTool(user.id),
+    },
     stopWhen: stepCountIs(5),
     maxOutputTokens: 2048,
     prepareStep: ({ stepNumber }) => {
@@ -167,6 +182,11 @@ export async function POST(req: Request) {
         } catch (error) {
           console.error(error);
         }
+        // Fire-and-forget — never let a memory hiccup affect the response
+        // the user already received.
+        void syncConversationMemoryIfDue(id).catch((error) =>
+          console.error("[memory] periodic sync failed", error)
+        );
       },
     }),
   });

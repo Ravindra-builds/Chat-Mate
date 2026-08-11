@@ -49,9 +49,12 @@ model Conversation {
 
   messages Message[]
 
+   memSyncedCount Int @default(0)
+
   @@index([userId, lastMessageAt(sort: Desc)])
   @@index([userId, isPinned, lastMessageAt(sort: Desc)])
   @@index([forkedFromConversationId]) 
+
 }
 
 enum MessageRole {

@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { saveExplicitMemory } from "@/features/memory/actions";
 
 type SearchResult = { title: string; url: string; snippet: string };
 
@@ -47,3 +48,25 @@ export const webSearchTool = tool({
     }
   },
 });
+
+/**
+ * Explicit-save tool, scoped to one user per request via closure — mirrors
+ * webSearchTool's shape but needs userId, which isn't available inside a
+ * static tool definition.
+ */
+export function createSaveMemoryTool(userId: string) {
+  return tool({
+    description:
+      "Save a specific fact the user explicitly asked you to remember or save for future conversations " +
+      "(e.g. 'remember that I prefer TypeScript', 'save this: my birthday is June 9'). " +
+      "Only call this when the user clearly asks you to remember/save something — not for casual mentions in passing.",
+    inputSchema: z.object({
+      fact: z
+        .string()
+        .describe(
+          "The fact to remember, written in third person, e.g. 'User prefers TypeScript over JavaScript.'"
+        ),
+    }),
+    execute: async ({ fact }) => saveExplicitMemory(userId, fact),
+  });
+}

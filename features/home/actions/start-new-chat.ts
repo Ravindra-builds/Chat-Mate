@@ -1,33 +1,30 @@
 "use server";
 
+import { after } from "next/server";
 import { requireUser } from "@/features/auth/action/require-user";
 import { prisma } from "@/lib/db";
+import { flushPendingMemory } from "@/features/memory/actions";
 
+export async function startNewChat() {
+  const user = await requireUser();
 
-/**
- * Server action that creates a new conversation titled "New Chat".
- *
- * @returns The ID of the newly created conversation.
- */
+  const existing = await prisma.conversation.findFirst({
+    where: {
+      userId: user.id,
+      title: "New Chat",
+      isArchived: false,
+      messages: { none: {} },
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
-export async function startNewChat(){
-    const user = await requireUser();
+  after(() => flushPendingMemory(user.id));
 
-    const existing = await prisma.conversation.findFirst({
-        where: {
-            userId: user.id,
-            title: "New Chat",
-            isArchived: false,
-            messages: { none: {} }, // no messages yet = truly empty
-        },
-        orderBy: { createdAt: "desc" },
-    });
+  if (existing) return existing.id;
 
-    if (existing) return existing.id;
+  const conversation = await prisma.conversation.create({
+    data: { userId: user.id, title: "New Chat" },
+  });
 
-    const conversation = await prisma.conversation.create({
-        data: { userId: user.id, title: "New Chat" }
-    });
-
-    return conversation.id;
+  return conversation.id;
 }
