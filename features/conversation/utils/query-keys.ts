@@ -15,4 +15,7 @@ export const queryKeys = {
     usage: {
       status: ["usage-status"] as const,
     },
+     memory: {
+      all: ["memories"] as const,
+    },
   };
