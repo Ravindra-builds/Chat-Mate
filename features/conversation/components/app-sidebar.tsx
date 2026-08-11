@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { useState } from "react";
 import { RenameDialog } from "./rename-dialog";
+import { SettingsIcon } from "lucide-react";
 
 import {
   MoreHorizontalIcon,
@@ -61,7 +62,6 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { data: conversations, isLoading } = useConversations();
   const { isMobile, setOpenMobile } = useSidebar();
-
 
   const closeOnMobile = () => {
     if (isMobile) setOpenMobile(false);
@@ -123,9 +123,20 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
       <SidebarFooter>
-        <UsageStatus />
+        {/* <UsageStatus /> */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={pathname === "/settings"}
+              tooltip="Settings"
+              render={<Link href="/settings" onClick={closeOnMobile} />}
+            >
+              <SettingsIcon />
+              <span>Settings</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <SidebarFooterMenu />
       </SidebarFooter>
       <SidebarRail />
@@ -214,7 +225,10 @@ function ChatItem({
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <SidebarMenuAction showOnHover className="data-popup-open:bg-sidebar-accent" />
+            <SidebarMenuAction
+              showOnHover
+              className="data-popup-open:bg-sidebar-accent"
+            />
           }
         >
           <MoreHorizontalIcon />

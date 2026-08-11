@@ -1,8 +1,53 @@
 "use server";
 
 import { prisma } from "@/lib/db";
-import { getMessageText } from "@/features/ai/utils/message-parts";
+// import { getMessageText } from "@/features/ai/utils/message-parts";
 import { mem0, isMem0Configured } from "./mem0-client";
+import { requireUser } from "@/features/auth/action/require-user";
+
+export type StoredMemory = {
+  id: string;
+  memory: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+/**
+ * Lists every memory Mem0 has stored for the current user. Defensively
+ * normalizes the response shape — v3's getAll returns a paginated
+ * {count, next, previous, results} envelope, but this guards against a
+ * plain array too in case that changes again.
+ */
+export async function listMyMemories(): Promise<StoredMemory[]> {
+  if (!mem0) return [];
+  const user = await requireUser();
+
+  try {
+    const response = await mem0.getAll({
+      filters: { user_id: user.id },
+      pageSize: 100,
+    });
+    const results = Array.isArray(response) ? response : response.results ?? [];
+
+    return results.map((r) => ({
+      id: r.id,
+      memory: r.memory ?? "",
+      createdAt: r.created_at ?? null,
+      updatedAt: r.updated_at ?? null,
+    }));
+  } catch (error) {
+    console.error("[memory] listAll failed", error);
+    return [];
+  }
+}
+
+/** Explicit-save entry point for the settings UI — resolves the current user itself. */
+export async function addMemoryManuallyForCurrentUser(fact: string) {
+  const trimmed = fact.trim();
+  if (!trimmed) return { saved: false, reason: "Memory can't be empty." };
+  const user = await requireUser();
+  return saveExplicitMemory(user.id, trimmed);
+}
 
 const SYNC_EVERY_N_MESSAGES = 12;
 
