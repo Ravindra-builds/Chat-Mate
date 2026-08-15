@@ -3,7 +3,7 @@
 import { after } from "next/server";
 import { requireUser } from "@/features/auth/action/require-user";
 import { prisma } from "@/lib/db";
-import { flushPendingMemory } from "@/features/memory/actions";
+import { flushPendingMemory } from "@/features/memory/memory.service";
 
 export async function startNewChat() {
   const user = await requireUser();

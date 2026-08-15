@@ -47,13 +47,11 @@ const limiters: Record<Provider, Ratelimit> | null = redis
       google: new Ratelimit({
         redis,
         limiter: Ratelimit.slidingWindow(DAILY_LIMITS.google, "1 d"),
-        analytics: true,
         prefix: "ratelimit:chatmate:chat:google",
       }),
       openai: new Ratelimit({
         redis,
         limiter: Ratelimit.slidingWindow(DAILY_LIMITS.openai, "1 d"),
-        analytics: true,
         prefix: "ratelimit:chatmate:chat:openai",
       }),
     }

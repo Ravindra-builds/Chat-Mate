@@ -7,10 +7,10 @@ import { toast } from "sonner";
 import {
     createConversation,
     deleteConversation,
+    forkConversation,
     listConversations,
     updateConversation,
 } from "../actions/conversation.actions";
-import { forkConversation } from "@/features/ai/actions/conversation.action";
 import { queryKeys } from "../utils/query-keys";
 
 

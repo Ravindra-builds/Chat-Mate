@@ -1,0 +1,140 @@
+import { prisma } from "@/lib/db";
+import { mem0, isMem0Configured } from "./mem0-client";
+
+const SYNC_EVERY_N_MESSAGES = 12;
+
+type Mem0Message = { role: "user" | "assistant"; content: string };
+
+/**
+ * Server-only helper to query Mem0 for facts relevant to a given user and query.
+ * Not exposed as a Server Action.
+ */
+export async function retrieveMemoryContext(
+  userId: string,
+  query: string,
+): Promise<string | null> {
+  if (!mem0) return null;
+
+  try {
+    const results = await mem0.search(query, {
+      filters: { user_id: userId },
+      topK: 5,
+    });
+
+    if (!results.results || results.results.length === 0) return null;
+
+    const facts = results.results.map((r) => `- ${r.memory}`).join("\n");
+    return `What you remember about this user from past conversations (use only if relevant, don't force it into unrelated answers):\n${facts}`;
+  } catch (error) {
+    console.error("[memory] retrieval failed", error);
+    return null;
+  }
+}
+
+async function addToMemory(userId: string, messages: Mem0Message[]) {
+  if (!mem0 || messages.length === 0) return;
+  try {
+    await mem0.add(messages, { user_id: userId });
+  } catch (error) {
+    console.error("[memory] add failed", error);
+  }
+}
+
+/**
+ * Server-only helper to sync unsynced messages from a conversation into Mem0.
+ */
+export async function syncConversationMemory(conversationId: string) {
+  if (!isMem0Configured) return;
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { userId: true, memSyncedCount: true },
+  });
+  if (!conversation) return;
+
+  const rows = await prisma.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+    select: { role: true, content: true },
+  });
+
+  const unsynced = rows.slice(conversation.memSyncedCount);
+  if (unsynced.length === 0) return;
+
+  const messages: Mem0Message[] = unsynced
+    .filter((r) => r.role === "USER" || r.role === "ASSISTANT")
+    .map((r) => ({
+      role: r.role === "USER" ? ("user" as const) : ("assistant" as const),
+      content: r.content,
+    }))
+    .filter((m) => m.content.trim().length > 0);
+
+  await addToMemory(conversation.userId, messages);
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { memSyncedCount: rows.length },
+  });
+}
+
+/**
+ * Server-only helper to check if a conversation has reached the sync threshold.
+ */
+export async function syncConversationMemoryIfDue(conversationId: string) {
+  if (!isMem0Configured) return;
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: {
+      memSyncedCount: true,
+      _count: { select: { messages: true } },
+    },
+  });
+  if (!conversation) return;
+
+  const unsyncedCount =
+    conversation._count.messages - conversation.memSyncedCount;
+  if (unsyncedCount < SYNC_EVERY_N_MESSAGES) return;
+
+  await syncConversationMemory(conversationId);
+}
+
+/**
+ * Server-only helper to explicitly save a memory fact for a user in Mem0.
+ */
+export async function saveExplicitMemory(userId: string, fact: string) {
+  if (!mem0) {
+    return { saved: false, reason: "Memory isn't configured right now." };
+  }
+  try {
+    await mem0.add([{ role: "user", content: fact }], { user_id: userId });
+    return { saved: true };
+  } catch (error) {
+    console.error("[memory] explicit save failed", error);
+    return { saved: false, reason: "Could not save that right now." };
+  }
+}
+
+/**
+ * Server-only helper to flush pending un-synced conversations for a user.
+ */
+export async function flushPendingMemory(userId: string) {
+  if (!isMem0Configured) return;
+
+  const conversations = await prisma.conversation.findMany({
+    where: { userId, isArchived: false, isDeleted: false },
+    select: {
+      id: true,
+      memSyncedCount: true,
+      _count: { select: { messages: true } },
+    },
+    orderBy: { lastMessageAt: "desc" },
+    take: 5,
+  });
+
+  const pending = conversations.filter(
+    (c) => c._count.messages > c.memSyncedCount,
+  );
+
+  await Promise.all(pending.map((c) => syncConversationMemory(c.id)));
+}
