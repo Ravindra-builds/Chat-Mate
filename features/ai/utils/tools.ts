@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { saveExplicitMemory } from "@/features/memory/actions";
+import { saveExplicitMemory } from "@/features/memory/memory.service";
 
 type SearchResult = { title: string; url: string; snippet: string };
 

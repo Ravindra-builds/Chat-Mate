@@ -2,6 +2,7 @@
 
 import type { UIMessage } from "ai";
 import type { MessageRole, Prisma } from "@/lib/generated/prisma/client";
+import { requireUser } from "@/features/auth/action/require-user";
 import { prisma } from "@/lib/db";
 import { getMessageText, toUIMessageParts } from "@/features/ai/utils/message-parts";
 
@@ -93,8 +94,10 @@ async function walkAncestors(messageId: string): Promise<UIMessage[]> {
 export async function loadChatMessages(
   conversationId: string
 ): Promise<LoadChatMessagesResult> {
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
+  const user = await requireUser();
+
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: conversationId, userId: user.id },
     select: { activeRootId: true, forkedFromMessageId: true },
   });
 
@@ -182,6 +185,7 @@ export async function loadChatMessages(
  * branching.
  */
 export async function hasForksInSubtree(messageId: string): Promise<boolean> {
+  await requireUser();
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     WITH RECURSIVE subtree AS (
       SELECT id FROM "Message" WHERE id = ${messageId}
@@ -231,10 +235,16 @@ export async function saveChatMessages(
 
   if (relevant.length === 0) return;
 
-  const conversation = await prisma.conversation.findUniqueOrThrow({
-    where: { id: conversationId },
+  const user = await requireUser();
+
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: conversationId, userId: user.id },
     select: { title: true, activeRootId: true, forkedFromMessageId: true },
   });
+
+  if (!conversation) {
+    throw new Error("Conversation not found");
+  }
 
   const existingRows = await prisma.message.findMany({
     where: { id: { in: relevant.map((m) => m.id) } },

@@ -9,7 +9,7 @@ import { requireUser } from "@/features/auth/action/require-user";
 import { prisma } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
 import { after } from "next/server";
-import { retrieveMemoryContext, syncConversationMemoryIfDue } from "@/features/memory/actions";
+import { retrieveMemoryContext, syncConversationMemoryIfDue } from "@/features/memory/memory.service";
 import { getMessageText } from "@/features/ai/utils/message-parts";
 
 import {
